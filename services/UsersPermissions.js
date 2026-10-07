@@ -1,7 +1,8 @@
 'use strict';
 
 const _ = require('lodash');
-const request = require('request');
+
+const TEMPLATE_VARIABLE_REGEX = /<%=\s*(URL|CODE|TOKEN|USER\.email|USER\.username)\s*%>/g;
 
 /**
  * UsersPermissions.js service
@@ -119,26 +120,9 @@ module.exports = {
     return await Promise.all(arrayOfPromises);
   },
 
-  getPlugins(lang = 'en') {
-    return new Promise(resolve => {
-      request(
-        {
-          uri: `https://marketplace.strapi.io/plugins?lang=${lang}`,
-          json: true,
-          timeout: 3000,
-          headers: {
-            'cache-control': 'max-age=3600',
-          },
-        },
-        (err, response, body) => {
-          if (err || response.statusCode !== 200) {
-            return resolve([]);
-          }
-
-          resolve(body);
-        }
-      );
-    });
+  // The v3 marketplace no longer serves plugins (it answers 503), so roles render without its metadata.
+  getPlugins() {
+    return Promise.resolve([]);
   },
 
   getActions() {
@@ -409,8 +393,13 @@ module.exports = {
     return strapi.query('user', 'users-permissions').update({ id: user.id }, { role });
   },
 
+  // Interpolation of a fixed set of variables only. `_.template` also runs `<% %>` blocks and any
+  // expression, and email templates are editable from the admin panel (CVE-2023-22621). Anything else
+  // in the layout is left as written. Values are inserted as `<%= %>` always did: unescaped.
   template(layout, data) {
-    const compiledObject = _.template(layout);
-    return compiledObject(data);
+    return `${layout}`.replace(TEMPLATE_VARIABLE_REGEX, (match, key) => {
+      const value = _.get(data, key);
+      return value === null || value === undefined ? '' : `${value}`;
+    });
   },
 };

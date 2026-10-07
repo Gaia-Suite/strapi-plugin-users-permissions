@@ -11,6 +11,10 @@ const bcrypt = require('bcryptjs');
 
 const { sanitizeEntity, getAbsoluteServerUrl } = require('strapi-utils');
 
+// bcrypt only reads the first 72 bytes: a longer password would be silently truncated, and hashing
+// an unbounded one is a denial of service (CVE-2025-25298).
+const PASSWORD_MAX_BYTES = 72;
+
 module.exports = {
   /**
    * Promise to count users
@@ -88,6 +92,8 @@ module.exports = {
     return new Promise((resolve, reject) => {
       if (!user.password || this.isHashed(user.password)) {
         resolve(null);
+      } else if (Buffer.byteLength(`${user.password}`) > PASSWORD_MAX_BYTES) {
+        reject(strapi.errors.badRequest(`Password must be at most ${PASSWORD_MAX_BYTES} bytes`));
       } else {
         bcrypt.hash(`${user.password}`, 10, (err, hash) => {
           if (err) {
